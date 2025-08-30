@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>School Lesson Timer</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<style>
+ body { margin: 0; font-family: Arial, sans-serif; }
+ #timerWindow {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  background: #000;
+  color: #0f0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 28px;
+  z-index: 999999;
+  opacity: 0.85;
+  resize: both;
+  overflow: hidden;
+  cursor: move;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+ }
+ #toggleConfig {
+  background: transparent;
+  border: 1px solid #0f0;
+  color: #0f0;
+  font-size: 18px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+ }
+ #toggleConfig:hover { background: rgba(255,255,255,0.1); }
+ #configPanel {
+  position: fixed;
+  top: 60px;
+  left: 10px;
+  background: #fff;
+  color: #000;
+  padding: 12px;
+  border: 2px solid #000;
+  border-radius: 8px;
+  max-width: 320px;
+ }
+ #configPanel input[type="time"] { width: 90px; }
+ #configPanel table { width: 100%; }
+ #configPanel button { margin-top: 8px; cursor: pointer; }
+ thead th { text-align: center; }
+ tbody td { text-align: center; }
+</style>
+</head>
+<body>
+
+<div id="timerWindow"><span id="timerText">--:--</span><button id="toggleConfig">⚙️</button></div>
+
+<div id="configPanel">
+  <h3>הגדרת מערכת שעות</h3>
+  <table id="scheduleTable">
+    <thead>
+      <tr><th>מס'</th><th>התחלה</th><th>סיום</th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+  <button id="addRow">הוסף שיעור</button>
+  <button id="saveSchedule">שמור</button>
+</div>
+
+<script>
+const DEFAULT_DURATION = 45 * 60; // seconds
+let schedule = [];
+
+function timeStr(date) {
+  return date.toTimeString().slice(0, 5);
+}
+
+function loadSchedule() {
+  const saved = localStorage.getItem('lessonSchedule');
+  if (saved) {
+    schedule = JSON.parse(saved);
+  } else {
+    schedule = [];
+    let start = new Date();
+    start.setHours(8, 0, 0, 0);
+    for (let i = 1; i <= 6; i++) {
+      const end = new Date(start.getTime() + DEFAULT_DURATION * 1000);
+      schedule.push({ num: i, start: timeStr(start), end: timeStr(end) });
+      start = new Date(end.getTime());
+    }
+  }
+  renderTable();
+}
+
+function renderTable() {
+  const tbody = document.querySelector('#scheduleTable tbody');
+  tbody.innerHTML = '';
+  schedule.forEach(row => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${row.num}</td>
+      <td><input type="time" value="${row.start}" data-num="${row.num}" data-field="start"></td>
+      <td><input type="time" value="${row.end}" data-num="${row.num}" data-field="end"></td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function saveSchedule() {
+  document.querySelectorAll('#scheduleTable input').forEach(input => {
+    const num = parseInt(input.dataset.num);
+    const field = input.dataset.field;
+    const obj = schedule.find(r => r.num === num);
+    obj[field] = input.value;
+  });
+  localStorage.setItem('lessonSchedule', JSON.stringify(schedule));
+  alert('המערכת נשמרה');
+}
+
+function addRow() {
+  const nextNum = schedule.length + 1;
+  schedule.push({ num: nextNum, start: '00:00', end: '00:00' });
+  renderTable();
+}
+
+function updateTimer() {
+  const now = new Date();
+  const current = now.toTimeString().slice(0, 5);
+  for (const row of schedule) {
+    if (current >= row.start && current < row.end) {
+      const [h, m] = row.end.split(':').map(Number);
+      const endDate = new Date();
+      endDate.setHours(h, m, 0, 0);
+      const remaining = Math.floor((endDate - now) / 1000);
+      const minutes = String(Math.floor(remaining / 60)).padStart(2, '0');
+      const seconds = String(remaining % 60).padStart(2, '0');
+      document.getElementById('timerText').textContent = `${minutes}:${seconds} | שיעור ${row.num}`;
+      return;
+    }
+  }
+  document.getElementById('timerText').textContent = 'אין שיעור';
+}
+
+// Toggle configuration panel visibility
+const configPanel = document.getElementById('configPanel');
+document.getElementById('toggleConfig').addEventListener('click', () => {
+  configPanel.style.display = configPanel.style.display === 'none' ? 'block' : 'none';
+});
+
+// Drag functionality for timer window
+const timerWindow = document.getElementById('timerWindow');
+let isDragging = false;
+let offsetX = 0;
+let offsetY = 0;
+
+timerWindow.addEventListener('mousedown', e => {
+  if (e.target.id !== 'toggleConfig') {
+    isDragging = true;
+    offsetX = e.clientX - timerWindow.offsetLeft;
+    offsetY = e.clientY - timerWindow.offsetTop;
+  }
+});
+
+document.addEventListener('mousemove', e => {
+  if (isDragging) {
+    timerWindow.style.left = (e.clientX - offsetX) + 'px';
+    timerWindow.style.top = (e.clientY - offsetY) + 'px';
+  }
+});
+
+document.addEventListener('mouseup', () => {
+  isDragging = false;
+});
+
+document.getElementById('addRow').addEventListener('click', addRow);
+document.getElementById('saveSchedule').addEventListener('click', saveSchedule);
+
+setInterval(updateTimer, 1000);
+loadSchedule();
+
+// Service Worker registration for PWA
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(console.error);
+}
+</script>
+
+</body>
+</html>
